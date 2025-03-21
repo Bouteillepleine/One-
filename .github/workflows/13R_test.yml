@@ -43,38 +43,27 @@ jobs:
         mkdir -p toolchains
         echo "Installing Clang toolchain..."
         
-        # Try multiple sources with retries
-        function retry_command {
-          local retries=3
-          local count=0
-          until "$@"; do
-            exit=$?
-            count=$((count+1))
-            if [ $count -lt $retries ]; then
-              echo "Attempt $count failed, retrying..."
-              sleep 10
-            else
-              return $exit
-            fi
-          done
-        }
-
-        if ! retry_command git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-          -b $CLANG_VERSION \
-          --depth=1 \
-          toolchains/clang; then
-          
-          echo "Falling back to GitHub mirror..."
-          if ! retry_command wget https://github.com/cd-Crypton/Clang-Google/releases/download/r487747c/clang-r487747c-linux.tar.gz; then
-            echo "❌ Failed to download toolchain from all sources"
-            exit 1
-          fi
-          tar xzf clang-r487747c-linux.tar.gz -C toolchains/
+        # Try official Android prebuilt repository
+        if mkdir -p clang-prebuilt && cd clang-prebuilt && \
+          repo init -u https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            -b master --depth=1 && \
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags; then
+          mv linux-x86/clang-r* ../toolchains/clang
+          cd ..
+        else
+          echo "Falling back to LLVM official build..."
+          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.0/clang+llvm-16.0.0-aarch64-linux-gnu.tar.xz
+          tar xf clang+llvm-*.tar.xz -C toolchains/
+          mv toolchains/clang+llvm* toolchains/clang
         fi
 
         # Verify installation
         if [ ! -f "toolchains/clang/bin/clang" ]; then
-          echo "❌ Clang installation failed!"
+          echo "❌ Critical error: Clang installation failed!"
+          echo "Possible solutions:"
+          echo "1. Check network connectivity to Android/googlesource"
+          echo "2. Verify Clang version compatibility"
+          echo "3. Update the toolchain URL in workflow"
           exit 1
         fi
 
@@ -203,8 +192,6 @@ jobs:
         export CCACHE_BASEDIR=$(pwd)
 
         ccache --zero-stats
-        ccache --show-stats
-
         ./build_with_bazel.py \
           -t $KERNEL_TARGET \
           gki \
@@ -213,7 +200,6 @@ jobs:
           --config=stamp \
           --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
           -o out
-
         ccache --show-stats
 
     - name: Package Artifacts
