@@ -14,13 +14,13 @@ env:
 jobs:
   build-release:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     steps:
     - name: Initialize Environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
           bc bison build-essential ccache curl flex git libelf-dev libssl-dev \
           make ninja-build python3-dev python3-pip rsync unzip wget zip
 
@@ -41,10 +41,45 @@ jobs:
       working-directory: build/${{ env.ROOT_DIR }}
       run: |
         mkdir -p toolchains
-        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/$CLANG_VERSION.tar.gz
-        tar xzf $CLANG_VERSION.tar.gz -C toolchains/
-        echo "CLANG_BIN=$(pwd)/toolchains/bin" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=$(pwd)/toolchains/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        echo "Installing Clang toolchain..."
+        
+        # Try multiple sources with retries
+        function retry_command {
+          local retries=3
+          local count=0
+          until "$@"; do
+            exit=$?
+            count=$((count+1))
+            if [ $count -lt $retries ]; then
+              echo "Attempt $count failed, retrying..."
+              sleep 10
+            else
+              return $exit
+            fi
+          done
+        }
+
+        if ! retry_command git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+          -b $CLANG_VERSION \
+          --depth=1 \
+          toolchains/clang; then
+          
+          echo "Falling back to GitHub mirror..."
+          if ! retry_command wget https://github.com/cd-Crypton/Clang-Google/releases/download/r487747c/clang-r487747c-linux.tar.gz; then
+            echo "❌ Failed to download toolchain from all sources"
+            exit 1
+          fi
+          tar xzf clang-r487747c-linux.tar.gz -C toolchains/
+        fi
+
+        # Verify installation
+        if [ ! -f "toolchains/clang/bin/clang" ]; then
+          echo "❌ Clang installation failed!"
+          exit 1
+        fi
+
+        echo "CLANG_BIN=$(pwd)/toolchains/clang/bin" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=$(pwd)/toolchains/clang/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Clone Dependencies
       working-directory: build/${{ env.ROOT_DIR }}
@@ -78,10 +113,10 @@ jobs:
         set -xe
         cp -r ../susfs4ksu/kernel_patches/fs ./common/
         cp -r ../susfs4ksu/kernel_patches/include/linux ./common/include/
-        patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || exit 1
-        patch -p1 < ../kernel_patches/69_hide_stuff.patch || exit 1
-        patch -p1 < ../kernel_patches/next/next_hooks.patch || exit 1
-        patch -p1 < ../kernel_patches/next/syscall_hooks.patch || exit 1
+        patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch
+        patch -p1 < ../kernel_patches/69_hide_stuff.patch
+        patch -p1 < ../kernel_patches/next/next_hooks.patch
+        patch -p1 < ../kernel_patches/next/syscall_hooks.patch
 
     - name: Configure Kernel Options
       working-directory: build/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
@@ -164,6 +199,11 @@ jobs:
         export LLVM=1
         export KBUILD_BUILD_USER="GitHubActions"
         export KBUILD_BUILD_HOST="KernelBuilder"
+        export CCACHE_DIR=/tmp/ccache
+        export CCACHE_BASEDIR=$(pwd)
+
+        ccache --zero-stats
+        ccache --show-stats
 
         ./build_with_bazel.py \
           -t $KERNEL_TARGET \
@@ -173,6 +213,8 @@ jobs:
           --config=stamp \
           --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
           -o out
+
+        ccache --show-stats
 
     - name: Package Artifacts
       working-directory: build/${{ env.ROOT_DIR }}
@@ -184,6 +226,7 @@ jobs:
         cp "$KERNEL_IMAGE" AnyKernel3/Image
         echo "KSU Version: $KSU_VERSION" > AnyKernel3/version
         echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')" >> AnyKernel3/version
+        echo "Toolchain: $CLANG_VERSION" >> AnyKernel3/version
 
         ZIP_NAME="OP13r-Kernel-${KSU_VERSION}-$(date +%Y%m%d).zip"
         cd AnyKernel3
@@ -195,6 +238,7 @@ jobs:
       with:
         name: kernel-build
         path: ${{ env.ZIP_PATH }}
+        retention-days: 7
 
     - name: Cleanup
       if: always()
