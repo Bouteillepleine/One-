@@ -58,6 +58,18 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           max-size: 2G
+
+      - name: Install Latest Pahole
+        run: |
+          sudo apt-get remove --purge -y dwarves || true
+          git clone --recurse-submodules https://git.kernel.org/pub/scm/devel/pahole/pahole.git
+          cd pahole
+          mkdir build
+          cd build
+          cmake ..
+          make
+          sudo make install
+          cd ../..
       - name: Setup Python and Repo Tool
         run: |
           python3 -m pip install --upgrade pip
@@ -137,75 +149,60 @@ jobs:
           git rm --cached KernelSU-Next || true
       # Step 12: Configure kernel options
             # Step 12: Configure kernel options
-      - name: Configure Kernel Options
-        working-directory: build/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
+      - name: Configure Kernel
+        working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
         run: |
-         set -xe
-         CONFIG_FILE="./common/arch/arm64/configs/gki_defconfig"
-        
-         # KernelSU Configuration
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_KSU \
-          --disable CONFIG_KSU_WITH_KPROBES \
-          --enable CONFIG_KSU_SUSFS \
-          --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
-          --enable CONFIG_KSU_SUSFS_SUS_PATH \
-          --enable CONFIG_KSU_SUSFS_SUS_MOUNT \
-          --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
-          --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
-          --enable CONFIG_KSU_SUSFS_SUS_KSTAT \
-          --disable CONFIG_KSU_SUSFS_SUS_OVERLAYFS \
-          --enable CONFIG_KSU_SUSFS_TRY_UMOUNT \
-          --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT \
-          --enable CONFIG_KSU_SUSFS_SPOOF_UNAME \
-          --enable CONFIG_KSU_SUSFS_ENABLE_LOG \
-          --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-          --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-          --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
-          --disable CONFIG_KSU_SUSFS_SUS_SU
-         # Filesystem
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_TMPFS_XATTR \
-          --enable CONFIG_TMPFS_POSIX_ACL
-         # Network
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_IP_NF_TARGET_TTL \
-          --enable CONFIG_IP6_NF_TARGET_HL \
-          --enable CONFIG_IP6_NF_MATCH_HL
-         # Scheduler
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_SCHED_CLASS_EXT \
-          --enable CONFIG_SMP
-         # TCP Congestion
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_TCP_CONG_ADVANCED \
-          --enable CONFIG_TCP_CONG_BBR \
-          --disable CONFIG_TCP_CONG_BIC \
-          --disable CONFIG_TCP_CONG_WESTWOOD \
-          --disable CONFIG_TCP_CONG_HTCP
-         # Queue Management
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_NET_SCH_FQ \
-          --enable CONFIG_NET_SCH_FQ_CODEL \
-          --enable CONFIG_NET_SCH_DEFAULT \
-          --set-str CONFIG_DEFAULT_FQ "y"
-         # Versioning
-         ./scripts/config --file $CONFIG_FILE \
-          --set-str CONFIG_LOCALVERSION "-KSU-${KSU_VERSION}"
-         # LTO
-         ./scripts/config --file $CONFIG_FILE \
-          --enable CONFIG_LTO \
-          --enable CONFIG_LTO_CLANG_FULL \
-          --disable CONFIG_LTO_CLANG_THIN
-         # Verify critical configs
-         ./scripts/config --file $CONFIG_FILE --state CONFIG_KSU | grep -q "=y" || exit 1
-         ./scripts/config --file $CONFIG_FILE --state CONFIG_TCP_CONG_BBR | grep -q "=y" || exit 1
-
+          set -e  # Exit immediately if any command fails
+          CONFIGS=(
+            "CONFIG_KSU=y"
+            "CONFIG_KSU_WITH_KPROBES=n"
+            "CONFIG_KSU_SUSFS=y"
+            "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y"
+            "CONFIG_KSU_SUSFS_SUS_PATH=y"
+            "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
+            "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y"
+            "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y"
+            "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
+            "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n"
+            "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
+            "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y"
+            "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
+            "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
+            "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
+            "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
+            "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
+            "CONFIG_KSU_SUSFS_SUS_SU=n"
+            # Filesystem
+            "CONFIG_TMPFS_XATTR=y"
+            "CONFIG_TMPFS_POSIX_ACL=y"
+            # Network
+            "CONFIG_IP_NF_TARGET_TTL=y"
+            "CONFIG_IP6_NF_TARGET_HL=y"
+            "CONFIG_IP6_NF_MATCH_HL=y"
+            # Scheduler
+            "CONFIG_SCHED_CLASS_EXT=y"
+            "CONFIG_SMP=y"
+            # Add additional BBR config setting
+            "CONFIG_TCP_CONG_ADVANCED=y"
+            "CONFIG_TCP_CONG_BBR=y"
+            "CONFIG_NET_SCH_FQ=y"
+            "CONFIG_TCP_CONG_BIC=n"
+            "CONFIG_TCP_CONG_WESTWOOD=n"
+            "CONFIG_TCP_CONG_HTCP=n"
+            # LTO
+            "CONFIG_LTO=y"
+            "CONFIG_LTO_CLANG_FULL=y"
+            "CONFIG_LTO_CLANG_THIN=n"	          
+          )
+          for CONFIG in "${CONFIGS[@]}"; do
+            echo "$CONFIG" >> ./common/arch/arm64/configs/gki_defconfig
+          done
+          sed -i '2s/check_defconfig//' ./common/build.config.gki
       # Step 13: Run sed and perl Commands
       - name: Run sed and perl Commands
         working-directory: builds/${{ env.ROOT_DIR }}/kernel_platform/oneplus13r_v/kernel_platform
-        run: |
-          # Run sed commands for modifications
+        run: |          
+          #Run sed commands for modifications
           sed -i 's/check_defconfig//' ./common/build.config.gki
           sed -i '$s|echo "\$res"|echo "\$res"|' ./common/scripts/setlocalversion
           sed -i '$s|echo "\$res"|echo "\$res"|' ./msm-kernel/scripts/setlocalversion
@@ -231,27 +228,23 @@ jobs:
             --user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom \
             --ignore_missing_projects \
             -o "$(pwd)/out" || { echo "Bazel build failed"; exit 1; }
-      
-      - name: Package Artifacts
-        working-directory: build/${{ env.ROOT_DIR }}
+      # Step 14: Create a ZIP package
+      - name: Create ZIP Package
+        working-directory: builds/${{ env.ROOT_DIR }}
         run: |
-         set -xe
-         KERNEL_IMAGE="kernel_platform/oneplus13r_v/kernel_platform/out/dist/Image"
-         [ -f "$KERNEL_IMAGE" ] || { echo "❌ Kernel image missing"; exit 1; }
-         cp "$KERNEL_IMAGE" AnyKernel3/Image
-         echo "KSU Version: $KSU_VERSION" > AnyKernel3/version
-         echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')" >> AnyKernel3/version
-         echo "Toolchain: $CLANG_VERSION" >> AnyKernel3/version
-         ZIP_NAME="OP13r-Kernel-${KSU_VERSION}-$(date +%Y%m%d).zip"
-         cd AnyKernel3
-         zip -r9 "../$ZIP_NAME" . -x ".git*" "README.md"
-         echo "ZIP_PATH=$(pwd)/../$ZIP_NAME" >> $GITHUB_ENV
-      - name: Upload Artifact
+          if [ ! -f kernel_platform/oneplus13r_v/kernel_platform/out/dist/Image ]; then
+            echo "Kernel image not found"; exit 1
+          fi
+          cp kernel_platform/oneplus13r_v/kernel_platform/out/dist/Image AnyKernel3/Image || { echo "Failed to copy kernel image"; exit 1; }
+          cd AnyKernel3
+          ZIP_NAME="Anykernel3-OP13r.zip"
+          echo "Creating zip file $ZIP_NAME..."
+          zip -r "../$ZIP_NAME" ./* || { echo "Failed to create zip file"; exit 1; }
+          ls -lh "../$ZIP_NAME"
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_ENV
+      # Step 15: Upload build artifacts
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-         name: kernel-build
-         path: ${{ env.ZIP_PATH }}
-        
-      - name: Cleanup
-        if: always()
-        run: rm -rf build/${{ env.ROOT_DIR }}
+          name: kernel-${{ env.ROOT_DIR }}
+          path: builds/${{ env.ROOT_DIR }}/*.zip
