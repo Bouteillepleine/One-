@@ -171,16 +171,12 @@ jobs:
             "CONFIG_SCHED_CLASS_EXT=y"
             "CONFIG_SMP=y"
             # Add additional BBR config setting
-            "CONFIG_TCP_CONG_ADVANCED=y"
-            "CONFIG_TCP_CONG_BBR=y"
-            "CONFIG_NET_SCH_FQ=y"
-            "CONFIG_TCP_CONG_BIC=n"
-            "CONFIG_TCP_CONG_WESTWOOD=n"
-            "CONFIG_TCP_CONG_HTCP=n"
-            # LTO
-            "CONFIG_LTO=y"
-            "CONFIG_LTO_CLANG_FULL=y"
-            "CONFIG_LTO_CLANG_THIN=n"	          
+            # "CONFIG_TCP_CONG_ADVANCED=y"
+            # "CONFIG_TCP_CONG_BBR=y"
+            # "CONFIG_NET_SCH_FQ=y"
+            # "CONFIG_TCP_CONG_BIC=n"
+            # "CONFIG_TCP_CONG_WESTWOOD=n"
+            # "CONFIG_TCP_CONG_HTCP=n"                        	          
           )
           for CONFIG in "${CONFIGS[@]}"; do
             echo "$CONFIG" >> ./common/arch/arm64/configs/gki_defconfig
